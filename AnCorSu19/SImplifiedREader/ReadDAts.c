@@ -15,6 +15,8 @@ void Swap(char *str, size_t n);
 
 
 int ex_count = 0;
+int act_len = 0;
+int buf_size = 0;
 bool iSwap = true;
 
 bool THead = true;
@@ -37,7 +39,7 @@ int main(){
 	cur_dat = fopen("file1.dat","rb");
 	size_t size = fread(&pTH,1,112,cur_dat);
 	output = fopen("Data","w");
-	if(THead){ //If it is head of a tape
+	if(THead){
 		if(size != 112)
 		{
 			return -1;
@@ -57,7 +59,7 @@ int main(){
 		,"\nTape Info:" ,pTH.RecordType, pTH.RecordLength, pTH.TapeNum);
 	}
 	
-	if(FHead){ //If it is head of a file
+	if(FHead){
 	size_t size = fread(&pFH,1,90,cur_dat);
 		if(size != 90)
 		{
@@ -76,66 +78,61 @@ int main(){
 	
 	int rot_count = 0;
 	
-   //Read buffer header
-	size_t size4 = fread(&pBH,1,22,cur_dat);
-	std::cout << size4 << std::endl;
-	
-			if(iSwap)
-		{
-			Swap((char*)&pBH.RecordType,2);
-			Swap((char*)&pBH.RecordLength,2);
-			Swap((char*)&pBH.ModeFlags,2);
-		}
-			fprintf(output,"%s %d %d %x"
-		, "\nEvent Info:" ,pBH.RecordType, pBH.RecordLength, pBH.ModeFlags);
+
+	//while(fread(&pBH,1,22,cur_dat)){
+		fread(&pBH,1,22,cur_dat);
+		if(iSwap){
+				Swap((char*)&pBH.RecordType,2);
+				Swap((char*)&pBH.RecordLength,2);
+				Swap((char*)&pBH.ModeFlags,2);
+			}
+		fprintf(output,"%s %d %d %x"
+			, "\nBuffer Info:" ,pBH.RecordType, pBH.RecordLength, pBH.ModeFlags);
 		rot_count += 22;
 
-	//Read files a byte a time
-	while(rot_count <= 16384)
-{
-		size4 = fread(&pEH,1,20,cur_dat);
-		
-		//u_short *mover = &bigarr[rot_count];
 	
-		if(iSwap)
-		{
-			Swap((char*)&pEH.len,2);
-			Swap((char*)&pEH.len_clean,2);
-		}
-			int act_len = pEH.len & 0x00ff;
+		while(rot_count <= pBH.RecordLength){
+		
+			buf_size = fread(&pEH,1,20,cur_dat);
+		
+			u_short *mover = &bigarr[rot_count];
+	
+			if(iSwap){
+					Swap((char*)&pEH.len,2);
+					Swap((char*)&pEH.len_clean,2);
+				}
+			if(rot_count < pBH.RecordLength){
+				act_len = pEH.len & 0x00ff;
+			}else{
+				act_len = 0;
+			}
 			int gamma_ct = pEH.len_clean & 0x00ff;
 			
-		fprintf(output,"%s %d %d %s"
-		, "\nEvent Info:" , act_len, gamma_ct, "\n");
+			fprintf(output,"%s %d %d %s"
+			, "\nEvent Info:" , act_len, gamma_ct, "\n");
 		
-		ex_count = (act_len) - 10 - (gamma_ct*4);
-		rot_count += 20;
+			ex_count = (act_len) - 10 - (gamma_ct*4);
+			rot_count += 20;
 		
-		fread(dump , 1, gamma_ct*8, cur_dat);
-		rot_count += gamma_ct * 8;
+			fread(dump , 1, gamma_ct*8, cur_dat);
+			rot_count += gamma_ct * 8;
 		
-		//u_short *ga_inv;
-		//ga_inv = (u_short*)malloc(ex_count);
+			//u_short *ga_inv;
+			//ga_inv = (u_short*)malloc(ex_count);
 
-		size4 = fread(ga_inv, 2 , ex_count , cur_dat);
+			buf_size = fread(ga_inv, 2 , ex_count , cur_dat);
 		
-		rot_count += (ex_count * 2);
+			rot_count += (ex_count * 2);
 		
-		for(int i = 0;i < ex_count;i++)
-		{
-		
-		Swap((char*)&ga_inv[i],2);
-		fprintf(output, "%04x ", ga_inv[i]);
-		
-		rot_count++;	
-		//*ga_inv++;
-
-		}
-		//Seems to segfault because of this loop
-		
-		
-		
-	}
+			for(int i = 0;i < ex_count;i++){
+					Swap((char*)&ga_inv[i],2);
+					fprintf(output, "%04x ", ga_inv[i]);
+					rot_count++;	
+					//*ga_inv++;
+				}
+			}
+		rot_count = 0;
+	//}
 	//findCounts(bigarr, 16384);
 
 
