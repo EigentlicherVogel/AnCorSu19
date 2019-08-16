@@ -4,7 +4,6 @@
 #include <cstring>
 #include <string>
 #include <iostream>
-#include <fstream>
 #include <bitset>
 #include <dirent.h>
 
@@ -20,7 +19,7 @@
 
 static tape_header		pTH;
 static file_header		pFH;
-static buffer_header		pBH;
+static buffer_header	pBH;
 static event_header		pEH;
 
 void SwapBits(char *str, size_t n);
@@ -48,8 +47,6 @@ bool FHead = true;
 size_t total_ev_read = 0;
 size_t total_buf_read = 0;
 
-std::ofstream data_read_log;
-
 u_short ga_inv[300];
 
 
@@ -57,13 +54,15 @@ u_short ga_inv[300];
 int main(){
 
 	std::string folderN;
-	std::cout << "Please enter the folder name: ";
-	std::cin >> folderN;
+	cout << "Please enter the folder name: ";
+	cin >> folderN;
 
 	FILE *cur_data;
 	size_t tapeN = 0;
+	size_t fileN = 0;
 
-  	data_read_log.open ("dataLog.txt");
+	ofstream logfile;
+  	logfile.open ("dataLog.txt");
     
 	DIR *LDire1; 
 	struct dirent *DirOfDir;
@@ -97,6 +96,7 @@ int main(){
 				while((DirOfFil = readdir(LDire2)) != NULL){
 					//Second Loop inside sub-dir
 
+					fileN++;
 					if ( DirOfFil->d_type != DT_DIR ){
 						//Don't go deeper
 
@@ -108,7 +108,7 @@ int main(){
 						strcat(directoryLast, "/");
 						strcat(directoryLast, DirOfFil->d_name);
 						std::cout << "Reading file: " << directoryLast << std::endl;	
-						data_read_log << "Reading file: " << directoryLast << std::endl;	
+						logfile << "Reading file: " << directoryLast << std::endl;	
 						//Ditto
 						
 
@@ -120,7 +120,7 @@ int main(){
 							//Check if the file is empty
 							ungetc(c, cur_data);
 							std::cout << directoryLast << " is an empty file." << std::endl;
-							data_read_log << directoryLast << " is an empty file." << std::endl;
+							logfile << directoryLast << " is an empty file." << std::endl;
 							continue;
 						}else{
 							ungetc(c, cur_data);
@@ -133,14 +133,8 @@ int main(){
 								THead = false;
 							}
 
-							char itsName[60];
-							strcpy(itsName, DirOfDir->d_name);
-							strcat(itsName, "-");
-							strcat(itsName, DirOfFil->d_name);
-							strcat(itsName, ".root");
-							std::cout << "Data Saved Within " << itsName << std::endl;
-
-							TFile* FI = TFile::Open(itsName,"RECREATE");
+							std::string filN = "Tape" + std::to_string(tapeN) + "-" + DirOfFil->d_name + ".root";
+							TFile* FI = TFile::Open(ToCstr(filN),"RECREATE");
 							//Creates TFile for histograms 
 
 							int a = readData(cur_data, FI);
@@ -149,15 +143,16 @@ int main(){
 							}
 							//Read each file
 						}
-						data_read_log << "" << std::endl;
+						logfile << "" << std::endl;
 					}
 				}
-				data_read_log << "" << std::endl;
+				logfile << "" << std::endl;
+				fileN = 0;	
 			}
 		}
 	}
 	//}
-	data_read_log << "Finished! " << tapeN << " tapes read in total." << std::endl;
+	logfile << "Finished! " << tapeN << " tapes read in total." << std::endl;
 	std::cout << "Finished! " << tapeN << " tapes read in total." << std::endl;
 }
 
@@ -198,10 +193,10 @@ int readData(FILE* cur_dat, TFile* FIL){
 
 	while(!feof(cur_dat)){
 
-		data_read_log << "File Pointer Reading: " << ftell(cur_dat) << std::endl;
 		buf_size = fread(&pBH,1,22,cur_dat);
 		if(buf_size != 22){
-			return -3;
+			fseek(cur_dat, 16362 ,SEEK_CUR);
+			continue;
 		}
 		rot_count += 22;
 
@@ -213,9 +208,11 @@ int readData(FILE* cur_dat, TFile* FIL){
 		}
 		if(pBH.RecordType != 3){
 
-			data_read_log << "Erronous Record Type Is "<< pBH.RecordType << std::endl;
-			data_read_log << "Erronous File Pointer At " << ftell(cur_dat) << std::endl;
-			return 0;
+			logfile << "Erronous Record Type Is "<< pBH.RecordType << std::endl;
+			logfile << "Erronous File Pointer At " << ftell(cur_dat) << std::endl;
+			fseek(cur_dat, 16362 ,SEEK_CUR);
+			rot_count = 0;
+			continue;
 
 		}else{
 			
@@ -252,9 +249,7 @@ int readData(FILE* cur_dat, TFile* FIL){
 				rot_count += gamma_ct * 8;
 			
 
-				if (fread(ga_inv, 2 , ex_count , cur_dat) == 0){
-					continue;
-				};
+				fread(ga_inv, 2 , ex_count , cur_dat);
 			
 				for(int i = 0;i < ex_count;i++){
 					SwapBits((char*)&ga_inv[i],2);
@@ -317,8 +312,8 @@ int readData(FILE* cur_dat, TFile* FIL){
 				if(next_char != 128){
 					//If something does not start from 80, then it signifies the end of event buffers at its tail
 					if(rot_count < MIN_END_BEGIN_COUNT){
-						data_read_log << "File Pointer Of Aberration At " << ftell(cur_dat) << std::endl;
-						data_read_log << "Rotation Count at Aberration is " << rot_count << std::endl;
+						logfile << "File Pointer Of Aberration At " << ftell(cur_dat) << std::endl;
+						logfile << "Rotation Count at Aberration is " << rot_count << std::endl;
 					}//But if it's not at the end of record, then somthing is wrong
 					//If it detects such an error, then forward it to 16384 directly as the following data would be useless
 					while(rot_count < 16384){
@@ -332,13 +327,13 @@ int readData(FILE* cur_dat, TFile* FIL){
 
 				//Also, if the rot_count ever exceeds 16384, roll back to 16384
 				if(rot_count > 16384){
-					data_read_log << "Error: Rotation Count Out of bounds at:" << rot_count << std::endl;
-					data_read_log << "File Pointer Of Error At " << ftell(cur_dat) << std::endl;
+					logfile << "Error: Rotation Count Out of bounds at:" << rot_count << std::endl;
+					logfile << "File Pointer Of Error At " << ftell(cur_dat) << std::endl;
 					int ubergross = 16384 - rot_count; //Es mussen negativ ist
 					if(fseek(cur_dat, ubergross, SEEK_CUR) == 0){
-						data_read_log << "Breaking; rolling back pointers by " << ubergross << std::endl;
+						logfile << "Breaking; rolling back pointers by " << ubergross << std::endl;
 					}else{
-						data_read_log << "Error in rolling back pointer!!" << std::endl;
+						logfile << "Error in rolling back pointer!!" << std::endl;
 					}
 					break;
 				}	
@@ -361,7 +356,7 @@ int readData(FILE* cur_dat, TFile* FIL){
 		fflush(stdout);
 	}
 
-	data_read_log << "Read " << total_buf_read  << " Buffers and " << total_ev_read << " Events in this file." << std::endl;
+	logfile << "Read " << total_buf_read  << " Buffers and " << total_ev_read << " Events in this file." << std::endl;
 	
 	
 	for(int i = 0;i < VSN_CHANNEL_COUNT;i++){
@@ -420,9 +415,9 @@ int checkTHead(FILE *F){
 		SwapBits((char*)&pTH.TapeNum,2);
 		SwapBits((char*)&pTH.TapeUnit,2);
 	}
-	data_read_log << pTH.exp_title1 << " " << pTH.exp_title2 << std::endl; 
-	data_read_log << "Time at " << pTH.time << std::endl;
-	data_read_log << "Date at " << pTH.date << std::endl;
+	logfile << pTH.exp_title1 << " " << pTH.exp_title2 << std::endl; 
+	logfile << "Time at " << pTH.time << std::endl;
+	logfile << "Date at " << pTH.date << std::endl;
 	return 0;
 }
 
